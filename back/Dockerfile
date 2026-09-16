@@ -1,40 +1,15 @@
-# Create image from alpine:3.5
-FROM alpine:3.5
+FROM node:8.17.0-alpine
 
-# some usefull tags
-LABEL image-name docker-sfeirschool-back
-LABEL maintainer furgerot.f@sfeir.com
-LABEL sfeirschool-date 2018-07-23
+LABEL image-name="devopschallenge-back"
 
-# install nodejs
-RUN apk add --update nodejs
+WORKDIR /app
 
-# create user and group to run my app
-RUN addgroup mygroup && adduser -D -G mygroup myuser
+COPY package.json package-lock.json ./
+RUN npm ci --only=production && npm cache clean --force
 
-# Environment variable
-ENV appDir /app
+COPY server.js ./
 
-# declare ports listening in the container
+USER node
 EXPOSE 9000
 
-# Execute shell command : here create folder /app
-RUN mkdir ${appDir}
-
-# declare /app as current default directory
-WORKDIR ${appDir}
-
-# Copy all files from "build context" to /app folder
-COPY --chown=myuser:mygroup package.json package-lock.json ${appDir}/
-
-# Build the application and clean npm cache
-RUN npm install \
-    && npm cache clean
-
-COPY server.js ${appDir}
-
-# execute following instruction as myuser
-USER myuser
-
-# Declare container startup command
-ENTRYPOINT node server.js
+CMD ["node", "server.js"]

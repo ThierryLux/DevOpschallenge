@@ -1,0 +1,111 @@
+name: Build, publish and release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare version
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.version.outputs.short_sha }}
+    steps:
+      - name: Calculate short SHA
+        id: version
+        shell: bash
+        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  back:
+    name: Build and publish Back
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 8
+        uses: actions/setup-node@v4
+        with:
+          node-version: 8.17.0
+
+      - name: Install and validate Back
+        working-directory: back
+        run: |
+          npm ci
+          node --check server.js
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Back image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back
+          push: true
+          tags: thierryluxx/devopschallenge-back:${{ needs.prepare.outputs.short_sha }}
+
+  front:
+    name: Build and publish Front
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 8
+        uses: actions/setup-node@v4
+        with:
+          node-version: 8.17.0
+
+      - name: Install and validate Front
+        working-directory: front
+        run: |
+          npm ci
+          node --check server.js
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Front image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./front
+          push: true
+          tags: thierryluxx/devopschallenge-front:${{ needs.prepare.outputs.short_sha }}
+
+  release:
+    name: Create GitHub release
+    needs:
+      - prepare
+      - back
+      - front
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.short_sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Create release
+        shell: bash
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists."
+          else
+            gh release create "$VERSION" \
+              --target "$GITHUB_SHA" \
+              --title "Release $VERSION" \
+              --notes "Back: thierryluxx/devopschallenge-back:$VERSION; Front: thierryluxx/devopschallenge-front:$VERSION"
+          fi
